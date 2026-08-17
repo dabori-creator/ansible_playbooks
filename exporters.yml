@@ -1,0 +1,308 @@
+---
+- name: Install Grafana Exporters
+  hosts: all
+  become: yes
+  vars:
+    node_exporter_version: "1.10.2"
+    cadvisor_version: "v0.57.0"
+    postgres_exporter_version: "0.18.1"
+    blackbox_exporter_version: "v0.28.0"
+    x509_exporter_version: "3.19.1"
+    
+    nexus_base_url: "https://nexus.***/repository/***-ksup-repo/devops"
+    nexus_docker_registry: "nexus.***:443"
+
+  tasks:
+    # ==================== NODE EXPORTER ====================
+    - name: Install Node Exporter
+      block:
+        - name: Download Node Exporter
+          get_url:
+            url: "{{ nexus_base_url }}/node_exporter/{{ node_exporter_version }}.linux-amd64/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+            dest: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+            mode: '0644'
+
+        - name: Extract Node Exporter archive
+          unarchive:
+            src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+            dest: "/tmp"
+            remote_src: yes
+
+        - name: Create node_exporter user
+          user:
+            name: node_exporter
+            comment: "Node exporter user"
+            system: yes
+            shell: /bin/false
+            create_home: no
+
+        - name: Copy Node Exporter to /usr/bin
+          copy:
+            src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/"
+            dest: "/usr/bin/node_exporter-{{ node_exporter_version }}.linux-amd64/"
+            remote_src: yes
+            mode: '0755'
+
+        - name: Create Node Exporter systemd service
+          copy:
+            dest: /usr/lib/systemd/system/node_exporter.service
+            content: |
+              [Unit]
+              Description=node exporter
+              After=network.target
+
+              [Service]
+              EnvironmentFile=-/etc/default/prometheus
+              User=node_exporter
+              ExecStart=/usr/bin/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter --web.listen-address=:8501 --collector.disable-defaults --collector.systemd --collector.cpu --collector.conntrack --collector.cpufreq --collector.filefd --collector.netclass --collector.netstat --collector.nfs --collector.time --collector.meminfo --collector.uname --collector.filesystem --collector.netdev --collector.vmstat --collector.diskstats --collector.timex --collector.stat --collector.softnet --collector.sockstat --collector.pressure --collector.powersupplyclass --collector.schedstat --collector.entropy --collector.loadavg --collector.arp --collector.os
+
+              ExecReload=/bin/kill -HUP $MAINPID
+              Restart=always
+              RestartSec=5s
+              LimitNOFILE=65536
+
+              [Install]
+              WantedBy=multi-user.target
+            mode: '0644'
+
+        - name: Reload systemd and start Node Exporter
+          systemd:
+            daemon_reload: yes
+            name: node_exporter
+            state: restarted
+            enabled: yes
+
+        - name: Set proper ownership for Node Exporter
+          shell: | 
+            chown -R node_exporter:node_exporter /usr/bin/node_exporter-1.10.2.linux-amd64/node_exporter
+            chown -R node_exporter:node_exporter /usr/lib/systemd/system/node_exporter.service
+
+        - name: Wait for Node Exporter to be ready
+          wait_for:
+            port: 8501
+            timeout: 30
+
+      when: "'node_exporter' in group_names"
+      tags: node_exporter
+
+    # ==================== DOCKER EXPORTER (CADVISOR) ====================
+    - name: Install Docker Exporter (cAdvisor)
+      block:      
+        - name: Stop cAdvisor container
+          shell:
+            docker stop cadvisor
+          ignore_errors: yes
+            
+        - name: Rm cAdvisor container
+          shell:
+            docker rm cadvisor
+          ignore_errors: yes
+        
+        - name: Run cAdvisor container
+          shell:
+            docker run \
+            --volume=/:/rootfs:ro \
+            --volume=/var/run:/var/run:ro \
+            --volume=/sys:/sys:ro \
+            --volume=/var/lib/docker/:/var/lib/docker:ro \
+            --volume=/dev/disk/:/dev/disk:ro \
+            --publish=8506:8080 \
+            --detach=true \
+            --name=cadvisor \
+            --privileged \
+            --device=/dev/kmsg \
+            nexus.***:443/google/cadvisor:v0.57.0
+
+        - name: Wait for cAdvisor to be ready
+          wait_for:
+            port: 8506
+            timeout: 30
+
+      when: "'docker_exporter' in group_names"
+      tags: docker_exporter
+
+    # ==================== POSTGRESQL EXPORTER ====================
+    - name: Install PostgreSQL Exporter
+      block:
+        - name: Download PostgreSQL Exporter
+          get_url:
+            url: "{{ nexus_base_url }}/postgres_exporter/{{ postgres_exporter_version }}.linux-amd64/postgres_exporter-{{ postgres_exporter_version }}.linux-amd64.tar.gz"
+            dest: "/tmp/postgres_exporter-{{ postgres_exporter_version }}.linux-amd64.tar.gz"
+            mode: '0644'
+
+        - name: Extract PostgreSQL Exporter archive
+          unarchive:
+            src: "/tmp/postgres_exporter-{{ postgres_exporter_version }}.linux-amd64.tar.gz"
+            dest: "/tmp"
+            remote_src: yes
+
+        - name: Copy PostgreSQL Exporter binary
+          copy:
+            src: "/tmp/postgres_exporter-{{ postgres_exporter_version }}.linux-amd64/postgres_exporter"
+            dest: "/usr/local/bin/postgres_exporter"
+            remote_src: yes
+            mode: '0755'
+            owner: postgres
+            group: postgres
+
+        - name: Create PostgreSQL Exporter systemd service
+          copy:
+            dest: /etc/systemd/system/postgres-exporter.service
+            content: |
+              [Unit]
+              Description=Prometheus PostgreSQL Exporter
+              After=network.target
+
+              [Service]
+              Type=simple
+              Restart=always
+              User=postgres
+              Group=postgres
+              Environment=DATA_SOURCE_NAME="postgresql://postgres_exporter:password@localhost/postgres?sslmode=disable"
+              ExecStart=/usr/local/bin/postgres_exporter --web.listen-address=:8503
+
+              [Install]
+              WantedBy=multi-user.target
+            mode: '0644'
+
+        - name: Reload systemd and start PostgreSQL Exporter
+          systemd:
+            daemon_reload: yes
+            name: postgres-exporter
+            state: restarted
+            enabled: yes
+
+        - name: Wait for PostgreSQL Exporter to be ready
+          wait_for:
+            port: 8503
+            timeout: 30
+
+      when: "'postgres_exporter' in group_names"
+      tags: postgres_exporter
+
+    # ==================== BLACKBOX EXPORTER ====================
+    - name: Install Blackbox Exporter
+      block:
+        - name: Create blackbox configuration directory
+          file:
+            path: /etc/blackbox
+            state: directory
+            mode: '0755'
+
+        - name: Create Blackbox configuration file
+          copy:
+            dest: /etc/blackbox/blackbox.yml
+            content: |
+              modules:
+                # Link Monitoring
+                http_2xx:
+                  prober: http
+                  timeout: 5s
+                  http:
+                    valid_http_versions: []
+                    valid_status_codes: []
+                    fail_if_ssl: false
+                    fail_if_not_ssl: false
+                    preferred_ip_protocol: "ip4"
+
+                ecp_cert:
+                  prober: http
+                  timeout: 35m
+                  http:
+                    valid_status_codes: []
+                    fail_if_body_not_matches_regexp:
+                      - "OK"
+            mode: '0644'
+            
+        - name: Stop Blackbox
+          shell:
+            docker stop blackbox
+          ignore_errors: yes
+            
+        - name: Rm Blackbox
+          shell:
+            docker rm blackbox
+          ignore_errors: yes
+
+        - name: Run Blackbox Exporter container
+          shell: |
+            docker run -d -p 8510:9115 --name=blackbox -v /etc/blackbox/:/config nexus.***:443/prometheus/blackbox-exporter:v0.28.0 --config.file=/config/blackbox.yml
+
+        - name: Wait for Blackbox Exporter to be ready
+          wait_for:
+            port: 8510
+            timeout: 30
+
+      when: "'blackbox_exporter' in group_names"
+      tags: blackbox_exporter
+
+    # ==================== X.509 CERTIFICATE EXPORTER ====================
+    - name: Install X.509 Certificate Exporter
+      block:
+        - name: Stop X.509
+          shell:
+            docker stop x509-cert
+          ignore_errors: yes
+            
+        - name: Rm X.509
+          shell:
+            docker rm x509-cert
+          ignore_errors: yes
+             
+        - name: Run X.509 Certificate Exporter container
+          shell:
+            docker run -d --restart always --name x509-cert -p 8511:9793 -v /etc/pki/ca-trust/source/anchors/:/etc/haproxy nexus.***:443/enix/x509-certificate-exporter:3.19.1 --watch-dir=/etc/haproxy
+
+        - name: Wait for X.509 Exporter to be ready
+          wait_for:
+            port: 8511
+            timeout: 30
+
+      when: "'x509_exporter' in group_names"
+      tags: x509_exporter
+
+    # ==================== VERIFICATION ====================
+    - name: Verify Node Exporter
+      uri:
+        url: http://localhost:8501/metrics
+        return_content: yes
+      register: node_exporter_metrics
+      when: "'node_exporter' in group_names"
+      tags: verify
+      ignore_errors: yes
+
+    - name: Verify Docker Exporter
+      uri:
+        url: http://localhost:8506/metrics
+        return_content: yes
+      register: docker_exporter_metrics
+      when: "'docker_exporter' in group_names"
+      tags: verify
+      ignore_errors: yes
+
+    - name: Verify PostgreSQL Exporter
+      uri:
+        url: http://localhost:8503/metrics
+        return_content: yes
+      register: postgres_exporter_metrics
+      when: "'postgres_exporter' in group_names"
+      tags: verify
+      ignore_errors: yes
+
+    - name: Verify Blackbox Exporter
+      uri:
+        url: http://localhost:8510/metrics
+        return_content: yes
+      register: blackbox_exporter_metrics
+      when: "'blackbox_exporter' in group_names"
+      tags: verify
+      ignore_errors: yes
+
+    - name: Verify X.509 Exporter
+      uri:
+        url: http://localhost:8511/metrics
+        return_content: yes
+      register: x509_exporter_metrics
+      when: "'x509_exporter' in group_names"
+      tags: verify
+      ignore_errors: yes
