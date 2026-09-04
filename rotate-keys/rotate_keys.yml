@@ -1,0 +1,153 @@
+---
+- name: Automatic SSH key rotation (every 90 days)
+  hosts: all
+  gather_facts: yes
+  vars:
+    rotation_interval_days: 90
+    key_comment_prefix: "rotation_gen"
+    ssh_dir: "~/.ssh"
+    authorized_keys_file: "{{ ssh_dir }}/authorized_keys"
+    new_private_key_path: "/var/id_ed25519_rotated_{{ ansible_date_time.epoch }}"
+    new_public_key_path: "/var/id_ed25519_rotated_{{ ansible_date_time.epoch }}.pub"
+    log_file: "{{ ssh_dir }}/key_rotation.log"
+
+  tasks:
+    - name: 1. Check if rotation is needed (last rotation date)
+      block:
+        - name: Read rotation log to find last generation number
+          command: "grep -E '^\\[.*\\] GENERATED: gen_' {{ log_file }} | tail -1"
+          register: last_gen_line
+          failed_when: false
+          changed_when: false
+
+        - name: Parse last generation number and date
+          set_fact:
+            last_gen_number: "{{ last_gen_line.stdout | regex_search('gen_(\\d+)', '\\1') | first | default(0) | int }}"
+            last_gen_date: "{{ last_gen_line.stdout | regex_search('\\d{4}-\\d{2}-\\d{2}') | default('1970-01-01') }}"
+          when: last_gen_line.stdout != ""
+
+        - name: Calculate days since last rotation
+          set_fact:
+            days_since_rotation: "{{ ((ansible_date_time.epoch | int) - (last_gen_date | to_datetime | string | to_datetime | timestamp | int)) / 86400 | int }}"
+          when: last_gen_line.stdout != ""
+      when: ansible_date_time is defined
+
+    - name: 2. Skip rotation if not enough time passed (or first run)
+      meta: end_play
+      when: 
+        - last_gen_line.stdout != ""
+        - days_since_rotation is defined
+        - days_since_rotation < rotation_interval_days
+
+    - name: 3. Generate new Ed25519 key pair on control node
+      delegate_to: localhost
+      run_once: true
+      block:
+        - name: Generate new private + public key
+          openssh_keypair:
+            path: "{{ new_private_key_path }}"
+            type: ed25519
+            comment: "{{ key_comment_prefix }}_gen_{{ last_gen_number | default(0) + 1 }}_{{ ansible_date_time.date }}"
+            force: yes
+          register: keypair_result
+
+        - name: Read generated public key
+          slurp:
+            src: "{{ new_public_key_path }}"
+          register: public_key_content
+
+        - name: Set public key fact
+          set_fact:
+            new_public_key: "{{ public_key_content.content | b64decode | trim }}"
+            new_gen_number: "{{ last_gen_number | default(0) + 1 }}"
+
+    - name: 4. Distribute new public key to remote servers (add to authorized_keys)
+      authorized_key:
+        user: "{{ ansible_user | default('root') }}"
+        state: present
+        key: "{{ new_public_key }}"
+        comment: "{{ key_comment_prefix }}_gen_{{ new_gen_number }}_{{ ansible_date_time.date }}"
+        exclusive: no
+      register: add_key_result
+
+    - name: 5. TEST: Verify SSH connection with new key
+      delegate_to: localhost
+      run_once: true
+      block:
+        - name: Create temporary inventory for testing
+          copy:
+            content: |
+              [test_host]
+              {{ inventory_hostname }} ansible_host={{ ansible_host | default(inventory_hostname) }}
+            dest: "{{ test_inventory_path }}"
+          run_once: true
+
+        - name: Test connection using new private key
+          command: >-
+            ansible -i {{ test_inventory_path }} test_host 
+            -m ping 
+            --private-key={{ new_private_key_path }}
+            -u {{ ansible_user | default('root') }}
+            -o StrictHostKeyChecking=no
+          register: test_result
+          failed_when: "'pong' not in test_result.stdout"
+          no_log: false
+
+        - name: Remove test inventory
+          file:
+            path: "{{ test_inventory_path }}"
+            state: absent
+          run_once: true
+
+    - name: 6. REPLACE: Remove old rotation keys (but keep other keys)
+      block:
+        - name: Get current authorized_keys lines
+          slurp:
+            src: "{{ authorized_keys_file }}"
+          register: auth_keys_slurp
+
+        - name: Filter out old rotation keys (keep others)
+          set_fact:
+            filtered_keys: >-
+              {{
+                auth_keys_slurp.content | b64decode | split('\n') 
+                | reject('search', '^.*{{ key_comment_prefix }}_.*$') 
+                | list
+              }}
+
+        - name: Write back authorized_keys without old rotation keys
+          copy:
+            content: "{{ filtered_keys | join('\n') }}\n"
+            dest: "{{ authorized_keys_file }}"
+            owner: "{{ ansible_user | default('root') }}"
+            group: "{{ ansible_user | default('root') }}"
+            mode: '0600'
+          when: filtered_keys | length > 0
+
+    - name: 7. Audit logging (on remote server)
+      lineinfile:
+        path: "{{ log_file }}"
+        create: yes
+        line: "[{{ ansible_date_time.iso8601 }}] ROTATED: gen_{{ new_gen_number }} key={{ new_public_key }} host={{ inventory_hostname }} user={{ ansible_user | default('root') }}"
+        owner: "{{ ansible_user | default('root') }}"
+        group: "{{ ansible_user | default('root') }}"
+        mode: '0600'
+
+    - name: 8. Cleanup local private key (optional - store securely)
+      delegate_to: localhost
+      file:
+        path: "{{ new_private_key_path }}"
+        state: absent
+      run_once: true
+      when: false   # Set true if you want to keep keys online
+
+    - name: 9. Final status message
+      debug:
+        msg: |
+          ============================================
+          SSH key rotation SUCCESS for {{ inventory_hostname }}
+          New generation: gen_{{ new_gen_number }}
+          Public key: {{ new_public_key }}
+          Log: {{ log_file }}
+          Next rotation: {{ rotation_interval_days }} days
+          ============================================

@@ -1,0 +1,62 @@
+[centos8]
+app01-cent08.kbsh.******* ansible_ssh_pass=***********
+app02-cent08.kbsh.******* ansible_ssh_pass=***********
+app03-cent08.kbsh.******* ansible_ssh_pass=***********
+app04-cent08.kbsh.******* ansible_ssh_pass=***********
+app05-cent08.kbsh.******* ansible_ssh_pass=***********
+app06-cent08.kbsh.******* ansible_ssh_pass=***********
+app08-cent08.kbsh.******* ansible_ssh_pass=***********
+app09-cent08.kbsh.******* ansible_ssh_pass=***********
+app10-cent08.kbsh.******* ansible_ssh_pass=***********
+app11-cent08.kbsh.******* ansible_ssh_pass=***********
+app12-cent08.kbsh.******* ansible_ssh_pass=***********
+app13-cent08.kbsh.******* ansible_ssh_pass=***********
+app14-cent08.kbsh.******* ansible_ssh_pass=***********
+
+[alma10]
+app01-alma10.kbsh.******* ansible_ssh_pass=***********
+app02-alma10.kbsh.******* ansible_ssh_pass=***********
+app03-alma10.kbsh.******* ansible_ssh_pass=***********
+app04-alma10.kbsh.******* ansible_ssh_pass=***********
+app05-alma10.kbsh.******* ansible_ssh_pass=***********
+app06-alma10.kbsh.******* ansible_ssh_pass=***********
+app07-alma10.kbsh.******* ansible_ssh_pass=***********
+app08-alma10.kbsh.******* ansible_ssh_pass=***********
+app09-alma10.kbsh.******* ansible_ssh_pass=***********
+app10-alma10.kbsh.******* ansible_ssh_pass=***********
+app11-alma10.kbsh.******* ansible_ssh_pass=***********
+app12-alma10.kbsh.******* ansible_ssh_pass=***********
+app13-alma10.kbsh.******* ansible_ssh_pass=***********
+app14-alma10.kbsh.******* ansible_ssh_pass=***********
+
+[debian]
+app01-debian13.kbsh.******* ansible_ssh_pass=***********
+app02-debian13.kbsh.******* ansible_ssh_pass=***********
+app03-debian13.kbsh.******* ansible_ssh_pass=***********
+app04-debian13.kbsh.******* ansible_ssh_pass=***********
+app05-debian13.kbsh.******* ansible_ssh_pass=***********
+app06-debian13.kbsh.******* ansible_ssh_pass=***********
+app07-debian13.kbsh.******* ansible_ssh_pass=***********
+app08-debian13.kbsh.******* ansible_ssh_pass=***********
+app09-debian13.kbsh.******* ansible_ssh_pass=***********
+app10-debian13.kbsh.******* ansible_ssh_pass=***********
+app11-debian13.kbsh.******* ansible_ssh_pass=***********
+app12-debian13.kbsh.******* ansible_ssh_pass=***********
+app13-debian13.kbsh.******* ansible_ssh_pass=***********
+app14-debian13.kbsh.******* ansible_ssh_pass=***********
+
+[redos]
+app01-red73.kbsh.******* ansible_ssh_pass=***********
+app02-red73.kbsh.******* ansible_ssh_pass=***********
+app03-red73.kbsh.******* ansible_ssh_pass=***********
+app04-red73.kbsh.******* ansible_ssh_pass=***********
+app05-red73.kbsh.******* ansible_ssh_pass=***********
+app06-red73.kbsh.******* ansible_ssh_pass=***********
+app07-red73.kbsh.******* ansible_ssh_pass=***********
+app08-red73.kbsh.******* ansible_ssh_pass=***********
+app09-red73.kbsh.******* ansible_ssh_pass=***********
+app10-red73.kbsh.******* ansible_ssh_pass=***********
+app11-red73.kbsh.******* ansible_ssh_pass=***********
+app12-red73.kbsh.******* ansible_ssh_pass=***********
+app13-red73.kbsh.******* ansible_ssh_pass=***********
+app14-red73.kbsh.******* ansible_ssh_pass=***********

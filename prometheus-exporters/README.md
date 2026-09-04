@@ -1,4 +1,4 @@
-# Ansible Playbook for Grafana Exporters
+# Ansible Playbook for Prometheus Exporters
 
 This playbook provides a streamlined way to deploy multiple Prometheus exporters across your infrastructure. Each exporter is installed and configured with secure defaults and can be selectively deployed using Ansible groups and tags.
 
@@ -243,28 +243,4 @@ This playbook provides a streamlined way to deploy multiple Prometheus exporters
    ansible-playbook -i inventory.ini install-exporters.yml -vvv
    ```
    
-   ## Security Considerations
-   
-   ### **Password Management**
-- PostgreSQL exporter uses a plain-text password in the systemd service file
-
-- Consider using Ansible Vault for sensitive data
-
-- Use environment variables or external secret management in production
-  
-  ### **Network Security**
-
-- Exporters expose metrics endpoints without authentication
-
-- Consider implementing firewall rules or reverse proxy with authentication
-
-- Use TLS/SSL for sensitive environments
-  
-  ### **User Management**
-
-- Node Exporter runs with dedicated `node_exporter` user
-
-- PostgreSQL Exporter runs with `postgres` user
-
-- Docker containers run with appropriate privileges
-  **Note**: Replace `your-domain.com` and `your-repo` with your actual Nexus repository details.
+   # 

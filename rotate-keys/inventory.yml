@@ -1,0 +1,6 @@
+[servergroup01]
+serv01 ansible_ssh_pass=***********
+serv02 ansible_ssh_pass=***********
+
+[servergroup02]
+serv11 ansible_ssh_pass=***********

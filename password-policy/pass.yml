@@ -1,0 +1,118 @@
+---
+- name: Chage -l for all users
+  hosts: all
+  remote_user: student
+  gather_facts: yes
+  become: yes
+
+  tasks:
+
+   - name: List users on remote machine
+     shell:
+       cmd: "getent passwd | cut -d: -f1"
+     register: users_list
+
+   - name: Run chage -1
+     shell: |
+       hostname>&2
+       chage_output=$( chage -l {{item}})
+       expire_change=$(echo "$chage_output" | grep -E "Срок действия пароля истекает|Password expires" | cut -d':' -f2)
+       if [ "$expire_change" == " never" ]; then
+         echo "NULL"
+       elif [ "$expire_change" == " никогда" ]; then
+         echo "NULL"
+         else
+           now_date=$(date +%s)
+           expire_date_in_second=$(date -d "$expire_change" +%s)
+           days_remaining=$((($expire_date_in_second - $now_date)/(3600*24)))
+           if [ $days_remaining -lt 5 ]; then
+             pass=$(gpg --gen-random -armor 1 10)
+             echo {{item}}:"$pass" | chpasswd 
+             echo "$pass"
+             else echo "NULL"
+           fi
+       fi
+     
+     register: chage_output
+     loop: "{{users_list.stdout_lines}}"
+
+   - name: Set main var
+     set_fact:
+       data_list: "{{ data_list | default([]) + chage_output.results | json_query('[].{host: stderr, user: item, pass: stdout}') }}"
+     when: chage_output.results | json_query('[].stdout') != 'NULL'
+     
+- name: Processing on localhost
+  hosts: localhost
+  gather_facts: false
+  
+  vars:
+    json_input_file: /tmp/HUP.json
+
+  tasks:
+   - name: Check pass file 1
+     stat:
+       path: '{{ json_input_file }}'
+     register: pass_file
+
+   - name: Remove pass file
+     shell: rm /tmp/HUP.json
+     when: pass_file.stat.exists
+
+   - name: Load main var
+     set_fact:
+       data_listing: "{{ data_listing | default([]) + hostvars[item].data_list }}"
+     loop: "{{ groups['all'] }}"
+
+   - name: Remove bad stings
+     debug:
+       msg: "{{ data_listing | json_query ('[?pass!=`NULL`]') }}"
+     register: true_data
+
+   - name: Check pass file 2
+     stat:
+       path: '{{ json_input_file }}'
+     register: pass_file
+
+   - name: Create pass file
+     copy:
+       content: "{{ true_data }}"
+       dest: '{{ json_input_file }}'
+       force: false
+       mode: 0777
+     when: not pass_file.stat.exists
+
+   - name: Debug content
+     shell: |
+       cat /tmp/HUP.json
+     register: file_content
+
+   - name: Show content
+     debug:
+       msg: "{{ file_content.stdout }}"
+
+   - name: Check main pass file
+     stat:
+       path: /tmp/HUP.json
+     register: main_pass_file
+
+   - name: Create backup file
+     template:
+       src: /tmp/HUP.json.gpg
+       dest: /tmp/HUP.json.gpg
+       backup: yes
+       mode: 0777
+      
+   - name: Encrypt file
+     shell: |
+       GPG_TTY=$(tty)
+       export GPG_TTY
+       echo secret | gpg -c --batch --yes --passphrase-fd 0 /tmp/HUP.json
+
+   - name: Check pass file 3
+     stat:
+       path: '{{ json_input_file }}'
+     register: pass_file
+
+   - name: Remove temp password file
+     shell: rm /tmp/HUP.json
+     when: pass_file.stat.exists
